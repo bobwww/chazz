@@ -17,6 +17,8 @@ def user_input():
         else:
             _input += ch
             return None
+    else:
+        return None
 
 
 addr = '127.0.0.1'
@@ -28,6 +30,7 @@ msgs_to_send = []
 while True:
     msg = user_input()
     if msg is not None:
+        print()
         msgs_to_send.append(msg)
 
     rlist, wlist, xlist = select.select([client_socket], [client_socket], [])
