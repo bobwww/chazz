@@ -1,8 +1,10 @@
 import select
 import socket
 import msvcrt
+import logging
 
 _input = b''
+logging.basicConfig(level=logging.INFO)
 
 
 def user_input():
@@ -12,8 +14,11 @@ def user_input():
         ch = msvcrt.getche()
         if ch == b'\r':
             tmp = _input
+            logging.debug('Input:' +repr(tmp))
             _input = b''
             return tmp
+        elif ch == b'\x08':
+            _input = _input[:-1]
         else:
             _input += ch
             return None
@@ -37,9 +42,11 @@ while True:
 
     if rlist:
         msg = client_socket.recv(1024).decode('utf-8')
+        logging.debug('Received message: ' + msg)
         print(msg)
 
     if wlist:
         for msg in msgs_to_send:
+            logging.debug('Sending message: '+repr(msg))
             client_socket.sendall(msg)
             msgs_to_send.remove(msg)
