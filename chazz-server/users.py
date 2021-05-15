@@ -2,6 +2,7 @@ import random
 
 counter = 0
 
+
 class Guest:
 
     def __init__(self, uid, name):
@@ -31,4 +32,3 @@ def create_guest():
     uid = counter
     counter += 1
     return Guest(uid, name)
-

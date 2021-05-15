@@ -14,7 +14,7 @@ def user_input():
         ch = msvcrt.getche()
         if ch == b'\r':
             tmp = _input
-            logging.debug('Input:' +repr(tmp))
+            logging.debug('Input:' + repr(tmp))
             _input = b''
             return tmp
         elif ch == b'\x08':
@@ -47,6 +47,6 @@ while True:
 
     if wlist:
         for msg in msgs_to_send:
-            logging.debug('Sending message: '+repr(msg))
+            logging.debug('Sending message: ' + repr(msg))
             client_socket.sendall(msg)
             msgs_to_send.remove(msg)
