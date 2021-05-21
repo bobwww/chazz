@@ -1,6 +1,7 @@
 import logging
 import select
 import socket
+import random
 
 import users
 import chats
@@ -17,7 +18,8 @@ class Server:
         self.socket_user_dict = {}
         self.msgs_to_send = {}
         self.run = False
-        self.chat = chats.Chat(1, 'MyFirstChat')
+        self.chat_list = [chats.Chat(1, 'MyFirstChat'), chats.Chat(2, 'MySecondChat')]
+        self.user_chat_dict = {}
 
     def start(self):
         self.server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -47,6 +49,7 @@ class Server:
         self.close()
 
     def queue_msg(self, msg: str, recipients: tuple, exclude: tuple = None):
+        logging.debug('Queueing msg: ' + repr(msg))
         if exclude is None:
             exclude = ()
         msg = msg.encode('utf-8')
@@ -65,22 +68,31 @@ class Server:
     def handle_new_connection(self, current_socket):
         conn, addr = current_socket.accept()
         self.client_sockets.append(conn)
-        self.socket_user_dict[conn] = users.create_guest()
-        self.chat.add_participant(self.socket_user_dict[conn])
+        user = users.create_guest()
+        self.socket_user_dict[conn] = user
+        chat = random.choice(self.chat_list)
+        chat.add_participant(self.socket_user_dict[conn])
+        self.user_chat_dict[user] = chat
         logging.debug(
             'A new client connected, addr: {0}, nickname:{1}'.format(addr, self.socket_user_dict[conn].name))
+        self.queue_msg('You have joined {0}'.format(chat.name), (conn,))
         self.queue_msg('{0} has joined the chat.'.format(self.socket_user_dict[
-                                                             conn].name), self.client_sockets)
+                                                             conn].name), self.users_to_sockets(chat.participants))
 
     def client_disconnected(self, current_socket):
         logging.debug('Client {0}, name {1} has disconnected.'.format(current_socket.getpeername(),
                                                                       self.socket_user_dict[
                                                                           current_socket].name))
+        user = self.socket_user_dict[current_socket]
+        chat = self.user_chat_dict[user]
         self.client_sockets.remove(current_socket)
         self.msgs_to_send.pop(current_socket, None)
+        self.user_chat_dict[user].remove_participant(user)
         self.queue_msg('{0} has left the chat.'.format(self.socket_user_dict[
-                                                           current_socket].name), self.client_sockets)
-        self.chat.remove_participant(self.socket_user_dict[current_socket])
+                                                           current_socket].name),
+                       self.users_to_sockets(chat.participants))
+
+        self.user_chat_dict.pop(user)
         self.socket_user_dict.pop(current_socket, None)
 
     def read_messages(self, current_socket):
@@ -100,7 +112,8 @@ class Server:
 
             logging.debug('A new message received: ' + msg)
             # msg = self.socket_user_dict[current_socket].name + ' said: ' + msg
-            msg, recipients = self.chat.handle_new_msg(msg, self.socket_user_dict[current_socket])
+            user = self.socket_user_dict[current_socket]
+            msg, recipients = self.user_chat_dict[user].handle_new_msg(msg, user)
             logging.debug('Message after modification: ' + msg)
             recipients = self.users_to_sockets(recipients)
             self.queue_msg(msg, recipients, exclude=(current_socket,))
