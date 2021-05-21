@@ -5,6 +5,7 @@ import random
 
 import users
 import chats
+from netproto import *
 
 
 class Server:
@@ -20,6 +21,7 @@ class Server:
         self.run = False
         self.chat_list = [chats.Chat(1, 'MyFirstChat'), chats.Chat(2, 'MySecondChat')]
         self.user_chat_dict = {}
+        self.request_func_dict = {Protocol.SEND_MSG: self.handle_chat_msg}
 
     def start(self):
         self.server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -104,19 +106,19 @@ class Server:
                 # Client disconnected
                 self.client_disconnected(current_socket)
                 return
-            if self.is_chatmsg_valid(msg):
-                msg = msg.decode('utf-8')
-            else:
-                logging.debug('Message is not valid. Throwing to trash.')
-                return
 
-            logging.debug('A new message received: ' + msg)
+
+
+            msg = Protocol.parse(msg)
+            if msg:
+                logging.debug('A new message received: ' + msg.args)
+                self.request_func_dict.get(msg.code)(current_socket, msg.args)
             # msg = self.socket_user_dict[current_socket].name + ' said: ' + msg
-            user = self.socket_user_dict[current_socket]
-            msg, recipients = self.user_chat_dict[user].handle_new_msg(msg, user)
-            logging.debug('Message after modification: ' + msg)
-            recipients = self.users_to_sockets(recipients)
-            self.queue_msg(msg, recipients, exclude=(current_socket,))
+            # user = self.socket_user_dict[current_socket]
+            # msg, recipients = self.user_chat_dict[user].handle_new_msg(msg, user)
+            # logging.debug('Message after modification: ' + msg)
+            # recipients = self.users_to_sockets(recipients)
+            # self.queue_msg(msg, recipients, exclude=(current_socket,))
 
     def send_messages(self, current_socket):
         if current_socket in self.msgs_to_send:
@@ -124,6 +126,16 @@ class Server:
                 logging.debug('Sending message to: ' + self.socket_user_dict[current_socket].name)
                 current_socket.sendall(msg)
                 self.msgs_to_send[current_socket].remove(msg)
+
+    def handle_chat_msg(self, sock, content):
+        if not self.is_chatmsg_valid(content):
+            logging.debug('Message is not valid. Throwing to trash.')
+            return
+        user = self.socket_user_dict[sock]
+        msg, recipients = self.user_chat_dict[user].handle_new_msg(content, user)
+        logging.debug('Message after modification: ' + msg)
+        recipients = self.users_to_sockets(recipients)
+        self.queue_msg(msg, recipients, exclude=(sock,))
 
     def sockets_to_users(self, socks: tuple):
         return [self.socket_user_dict.get(sock, None) for sock in socks]

@@ -36,7 +36,7 @@ while True:
     msg = user_input()
     if msg is not None:
         print()
-        msgs_to_send.append(msg)
+        msgs_to_send.append(b'SEND\r\n'+msg)
 
     rlist, wlist, xlist = select.select([client_socket], [client_socket], [])
 
