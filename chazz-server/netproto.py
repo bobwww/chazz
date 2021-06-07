@@ -13,6 +13,12 @@ class Protocol:
     SEPARATOR = '\r\n'
     REQUESTS = (
         SEND_MSG := 'SEND',
+        CHECK_ADMIN := 'ISADMIN',
+        KICK := 'KICK',
+        MUTE := 'MUTE',
+        UNMUTE := 'UNMUTE',
+        BAN := 'BAN',
+        UNBAN := 'UNBAN'
     )
     RESPONSES = (
 
