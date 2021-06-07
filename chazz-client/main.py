@@ -54,18 +54,21 @@ def handle_unmute(msg=b''):
 
 
 def handle_private_msg(msg=b''):
-    pass
+    name = msg.split()[1]
+    content = msg.split()[2:]
+    msgs_to_send.append(b'PRV\r\n' + name + b',' + content)
 
 
 def handle_op(msg=b''):
-    pass
+    msgs_to_send.append(b'OP\r\n' + msg.split()[1])
 
 
 def handle_deop(msg=b''):
-    pass
+    msgs_to_send.append(b'DEOP\r\n' + msg.split()[1])
 
 cmds = {b'ISADMIN': handle_isadmin, b'kick': handle_kick, b'mute': handle_mute, b'unmute': handle_unmute,
-        b'ban': handle_ban, b'unban': handle_unban}
+        b'ban': handle_ban, b'unban': handle_unban,
+        b'op':handle_op, b'deop':handle_deop, b'prv':handle_private_msg}
 
 while True:
     msg = user_input()

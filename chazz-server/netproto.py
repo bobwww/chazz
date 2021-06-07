@@ -18,7 +18,10 @@ class Protocol:
         MUTE := 'MUTE',
         UNMUTE := 'UNMUTE',
         BAN := 'BAN',
-        UNBAN := 'UNBAN'
+        UNBAN := 'UNBAN',
+        OP := 'OP',
+        DEOP := 'DEOP',
+        PRIVATE_MSG := 'PRV'
     )
     RESPONSES = (
 

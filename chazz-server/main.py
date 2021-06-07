@@ -25,7 +25,11 @@ class Server:
         self.request_func_dict = {Protocol.SEND_MSG: self.handle_chat_msg,
                                   Protocol.CHECK_ADMIN: self.handle_check_admin,
                                   Protocol.KICK: self.handle_kick, Protocol.MUTE: self.handle_mute,
-                                  Protocol.UNMUTE: self.handle_unmute, Protocol.BAN: self.handle_ban, Protocol.UNBAN: self.handle_unban}
+                                  Protocol.UNMUTE: self.handle_unmute, Protocol.BAN: self.handle_ban,
+                                  Protocol.UNBAN: self.handle_unban,
+                                  Protocol.OP: self.handle_op,
+                                  Protocol.DEOP: self.handle_deop,
+                                  Protocol.PRIVATE_MSG: self.handle_private_msg}
 
     def start(self):
         self.server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -72,7 +76,6 @@ class Server:
         return msg.isascii()
 
     def handle_new_connection(self, current_socket):
-        print(self.banned_addresses)
         conn, addr = current_socket.accept()
         if addr[0] in self.banned_addresses:
             conn.close()
@@ -118,7 +121,7 @@ class Server:
 
             msg = Protocol.parse(msg)
             if msg:
-                logging.debug('A new message received: ' + msg.args)
+                logging.debug('A new message received: ' + msg.code + '|' + msg.args)
                 self.request_func_dict.get(msg.code)(current_socket, msg.args)
             # msg = self.socket_user_dict[current_socket].name + ' said: ' + msg
             # user = self.socket_user_dict[current_socket]
@@ -178,14 +181,20 @@ class Server:
         user = self.name_to_user(args)
         user.muted = False
 
-    def handle_private_msg(self):
-        pass
+    def handle_private_msg(self, sock, args):
+        target_name, content = args.split(',')
+        print(target_name, content)
+        user = self.name_to_user(target_name)
+        target_sock = self.users_to_sockets((user,))[0]
+        self.queue_msg(content, (target_sock,))
 
-    def handle_op(self):
-        pass
+    def handle_op(self, sock, args):
+        user = self.name_to_user(args)
+        user.admin = True
 
-    def handle_deop(self):
-        pass
+    def handle_deop(self, sock, args):
+        user = self.name_to_user(args)
+        user.admin = False
 
     def sockets_to_users(self, socks: tuple):
         return [self.socket_user_dict.get(sock, None) for sock in socks]
