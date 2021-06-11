@@ -15,7 +15,7 @@ def admin_command(f):
         if not user.is_admin():
             logging.warning(f'{user.name} has no perm to do cmd.')
             return
-        f(user, args)
+        f(_, user, args)
 
     return inside
 
@@ -224,7 +224,8 @@ class Server:
         print(target_name, content)
         user = users.name_to_user(target_name, self.users)
         target_sock = self.users_to_sockets((user,))[0]
-        self.queue_msg(content, (target_sock,))
+        msg = 'From '+user.prefix + user.name + ' said: ' + content
+        self.queue_msg(msg, (target_sock,))
 
     @admin_command
     def handle_op(self, user, args):
