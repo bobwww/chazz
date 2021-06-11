@@ -66,9 +66,15 @@ def handle_op(msg=b''):
 def handle_deop(msg=b''):
     msgs_to_send.append(b'DEOP\r\n' + msg.split()[1])
 
-cmds = {b'ISADMIN': handle_isadmin, b'kick': handle_kick, b'mute': handle_mute, b'unmute': handle_unmute,
+def handle_rename(msg=b''):
+    msgs_to_send.append(b'RENAME\r\n' + msg.split()[1])
+
+def handle_find_id(msg=b''):
+    msgs_to_send.append(b'IDQUERY\r\n' + msg.split()[1])
+
+cmds = {b'isadmin': handle_isadmin, b'kick': handle_kick, b'mute': handle_mute, b'unmute': handle_unmute,
         b'ban': handle_ban, b'unban': handle_unban,
-        b'op':handle_op, b'deop':handle_deop, b'prv':handle_private_msg}
+        b'op':handle_op, b'deop':handle_deop, b'prv':handle_private_msg, b'rename': handle_rename, b'checkid': handle_find_id}
 
 while True:
     msg = user_input()

@@ -7,11 +7,23 @@ import users
 import chats
 from netproto import *
 
+chat_list = ['Coffee', 'Banana']
+
+def admin_command(f):
+
+    def inside(_, user, args):
+        if not user.is_admin():
+            logging.warning(f'{user.name} has no perm to do cmd.')
+            return
+        f(user, args)
+
+    return inside
+
 
 class Server:
     logging.basicConfig(level=logging.DEBUG)
 
-    def __init__(self, addr, port):
+    def __init__(self, addr, port, max_connections):
         self.addr = addr
         self.port = port
         self.server_socket = None
@@ -20,23 +32,28 @@ class Server:
         self.msgs_to_send = {}
         self.run = False
         self.banned_addresses = []
-        self.chat_list = [chats.Chat(1, 'MyFirstChat'), chats.Chat(2, 'MySecondChat')]
         self.user_chat_dict = {}
+        self.chat_list = [chats.Chat(i, chat) for i, chat in enumerate(chat_list)]
+        self.max_connections = max_connections
         self.request_func_dict = {Protocol.SEND_MSG: self.handle_chat_msg,
                                   Protocol.CHECK_ADMIN: self.handle_check_admin,
-                                  Protocol.KICK: self.handle_kick, Protocol.MUTE: self.handle_mute,
-                                  Protocol.UNMUTE: self.handle_unmute, Protocol.BAN: self.handle_ban,
+                                  Protocol.KICK: self.handle_kick,
+                                  Protocol.MUTE: self.handle_mute,
+                                  Protocol.UNMUTE: self.handle_unmute,
+                                  Protocol.BAN: self.handle_ban,
                                   Protocol.UNBAN: self.handle_unban,
                                   Protocol.OP: self.handle_op,
                                   Protocol.DEOP: self.handle_deop,
-                                  Protocol.PRIVATE_MSG: self.handle_private_msg}
+                                  Protocol.PRIVATE_MSG: self.handle_private_msg,
+                                  Protocol.RENAME: self.handle_rename,
+                                  Protocol.FIND_ID: self.handle_id_query}
 
     def start(self):
         self.server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.server_socket.bind((self.addr, self.port))
         self.server_socket.listen()
         self.run = True
-        logging.debug('Server has started successfully.')
+        logging.info('Server has started successfully.')
 
     def stop(self):
         self.run = False
@@ -77,14 +94,16 @@ class Server:
 
     def handle_new_connection(self, current_socket):
         conn, addr = current_socket.accept()
-        if addr[0] in self.banned_addresses:
+        if addr[0] in self.banned_addresses or len(self.client_sockets) >= self.max_connections:
             conn.close()
             return
         self.client_sockets.append(conn)
-        user = users.create_guest()
+        user = users.create_guest(self.users)
         self.socket_user_dict[conn] = user
         chat = random.choice(self.chat_list)
-        chat.add_participant(self.socket_user_dict[conn])
+        chat.add_participant(user)
+        if len(chat.participants) == 1:
+            user.admin = True
         self.user_chat_dict[user] = chat
         logging.debug(
             'A new client connected, addr: {0}, nickname:{1}'.format(addr, self.socket_user_dict[conn].name))
@@ -105,9 +124,11 @@ class Server:
                                                            current_socket].name),
                        self.users_to_sockets(chat.participants))
         current_socket.close()
-
         self.user_chat_dict.pop(user)
         self.socket_user_dict.pop(current_socket, None)
+        if user.is_admin():
+            if not chat.is_any_admin() and len(chat.participants) > 0:
+                chat.get_oldest_user().set_admin(True)
 
     def read_messages(self, current_socket):
         if current_socket == self.server_socket:
@@ -122,7 +143,14 @@ class Server:
             msg = Protocol.parse(msg)
             if msg:
                 logging.debug('A new message received: ' + msg.code + '|' + msg.args)
-                self.request_func_dict.get(msg.code)(current_socket, msg.args)
+                user = self.socket_user_dict[current_socket]
+
+                self.request_func_dict.get(msg.code)(user, msg.args)
+                # try:
+                #     user = self.socket_user_dict[current_socket]
+                #     self.request_func_dict.get(msg.code)(user, msg.args)
+                # except Exception as e:
+                #     logging.error('An exception has occured: '+repr(e))
             # msg = self.socket_user_dict[current_socket].name + ' said: ' + msg
             # user = self.socket_user_dict[current_socket]
             # msg, recipients = self.user_chat_dict[user].handle_new_msg(msg, user)
@@ -137,86 +165,109 @@ class Server:
                 current_socket.sendall(msg)
                 self.msgs_to_send[current_socket].remove(msg)
 
-    def handle_chat_msg(self, sock, content):
+    def handle_chat_msg(self, user, content):
         if not self.is_chatmsg_valid(content):
             logging.debug('Message is not valid. Throwing to trash.')
             return
-        user = self.socket_user_dict[sock]
         if user.is_muted():
             logging.debug('User is muted. Throwing to trash.')
             return
         msg, recipients = self.user_chat_dict[user].handle_new_msg(content, user)
         logging.debug('Message after modification: ' + msg)
         recipients = self.users_to_sockets(recipients)
-        self.queue_msg(msg, recipients, exclude=(sock,))
+        self.queue_msg(msg, recipients, exclude=tuple(self.users_to_sockets((user,))))
 
-    def handle_check_admin(self, sock, args):
-        user = self.socket_user_dict[sock]
+    def handle_check_admin(self, user, args):
         if user.is_admin():
             msg = 'You are admin'
         else:
             msg = 'You are not admin'
-        self.queue_msg(msg, (sock,))
+        self.queue_msg(msg, tuple(self.users_to_sockets((user,))))
 
-    def handle_kick(self, sock, args):
-        user = self.name_to_user(args)
+    def handle_id_query(self, user, args):
+        target = users.name_to_user(args, self.users)
+        if target:
+            msg = '[SYSTEM]ID of ' + target.name + ' is '+ str(target.uid)
+        else:
+            msg = 'User not found'
+        self.queue_msg(msg, tuple(self.users_to_sockets((user,))))
+
+    @admin_command
+    def handle_kick(self, user, args):
+        user = users.name_to_user(args, self.users)
         target_sock = self.users_to_sockets((user,))[0]
         self.client_disconnected(target_sock)
 
-    def handle_ban(self, sock, args):
-        user = self.name_to_user(args)
+    @admin_command
+    def handle_ban(self, user, args):
+        user = users.name_to_user(args, self.users)
         target_sock = self.users_to_sockets((user,))[0]
         self.banned_addresses.append(target_sock.getpeername()[0])
         self.client_disconnected(target_sock)
 
-
-    def handle_unban(self, sock, args):
+    @admin_command
+    def handle_unban(self, user, args):
         self.banned_addresses.remove(args)
 
-    def handle_mute(self, sock, args):
-        user = self.name_to_user(args)
+    @admin_command
+    def handle_mute(self, user, args):
+        user = users.name_to_user(args, self.users)
         user.muted = True
 
-    def handle_unmute(self, sock, args):
-        user = self.name_to_user(args)
+    @admin_command
+    def handle_unmute(self, user, args):
+        user = users.name_to_user(args, self.users)
         user.muted = False
 
-    def handle_private_msg(self, sock, args):
+    def handle_private_msg(self, user, args):
         target_name, content = args.split(',')
         print(target_name, content)
-        user = self.name_to_user(target_name)
+        user = users.name_to_user(target_name, self.users)
         target_sock = self.users_to_sockets((user,))[0]
         self.queue_msg(content, (target_sock,))
 
-    def handle_op(self, sock, args):
-        user = self.name_to_user(args)
+    @admin_command
+    def handle_op(self, user, args):
+        user = users.name_to_user(args, self.users)
         user.admin = True
 
-    def handle_deop(self, sock, args):
-        user = self.name_to_user(args)
+    @admin_command
+    def handle_deop(self, user, args):
+        user = users.name_to_user(args, self.users)
         user.admin = False
+
+    def handle_rename(self, user, args):
+        if not users.is_name_valid(args):
+            msg = '[SYSTEM]Name is invalid'
+        elif users.is_name_in_use(args, self.users):
+            msg = '[SYSTEM]Name is already in use'
+        else:
+            user.name = args
+            msg = '[SYSTEM]Name changed to: ' + args
+        self.queue_msg(msg, tuple(self.users_to_sockets((user,))))
+
+
+    @property
+    def users(self):
+        return list(self.socket_user_dict.values())
 
     def sockets_to_users(self, socks: tuple):
         return [self.socket_user_dict.get(sock, None) for sock in socks]
 
     def users_to_sockets(self, users: tuple):
         keys = tuple(self.socket_user_dict.keys())
-        values = tuple(self.socket_user_dict.values())
+        values = tuple(self.users)
         res = []
         for user in users:
             user_i = values.index(user)
             res.append(keys[user_i])
         return res
 
-    def name_to_user(self, name):
-        for user in self.socket_user_dict.values():
-            if user.name == name:
-                return user
 
 
 if __name__ == '__main__':
     try:
-        server = Server('127.0.0.1', 8050)
+        server = Server('127.0.0.1', 8050, 20)
         server.start()
         server.main_loop()
     except KeyboardInterrupt:
